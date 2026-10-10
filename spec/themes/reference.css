@@ -1,0 +1,10 @@
+/* Tokens another sheet defines: utilities read them, and they are not written. */
+@theme reference {
+  --color-brand: #1d4ed8;
+  --color-brand-soft: oklch(0.9 0.05 250);
+  --radius-card: 1.25rem;
+  --text-hero: 4rem;
+  --text-hero--line-height: 1.1;
+  --shadow-card: 0 2px 8px rgb(0 0 0 / 0.2);
+  --breakpoint-3xl: 120rem;
+}

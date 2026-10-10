@@ -1,0 +1,23 @@
+/* A project's tokens over the default theme. */
+@theme {
+  --color-brand: #1d4ed8;
+  --color-brand-soft: oklch(0.9 0.05 250);
+  --breakpoint-3xl: 120rem;
+  --radius-card: 1.25rem;
+  --font-display: "Inter", sans-serif;
+  --text-hero: 4rem;
+  --text-hero--line-height: 1.1;
+  --shadow-card: 0 2px 8px rgb(0 0 0 / 0.2);
+  --ease-snap: cubic-bezier(0.2, 0, 0, 1);
+  --container-prose: 65ch;
+  --animate-wiggle: wiggle 1s ease-in-out infinite;
+
+  @keyframes wiggle {
+    0%, 100% {
+      rotate: -3deg;
+    }
+    50% {
+      rotate: 3deg;
+    }
+  }
+}

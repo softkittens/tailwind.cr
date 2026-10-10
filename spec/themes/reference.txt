@@ -1,0 +1,11 @@
+flex
+bg-brand
+bg-brand/50
+text-brand-soft/20 rounded-card
+text-hero
+text-hero/7
+shadow-card
+shadow-brand/30
+border-brand ring-brand/20 from-brand to-brand-soft
+3xl:flex max-3xl:hidden
+text-red-500 bg-brand

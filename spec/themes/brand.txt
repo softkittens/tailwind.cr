@@ -1,0 +1,24 @@
+bg-brand
+bg-brand/50
+text-brand-soft
+border-brand ring-brand/20 from-brand to-brand-soft
+shadow-brand
+fill-brand stroke-brand accent-brand caret-brand decoration-brand outline-brand
+3xl:flex
+max-3xl:flex
+min-3xl:flex
+rounded-card
+rounded-t-card
+font-display
+text-hero
+text-hero/8
+shadow-card
+shadow-card/50
+ease-snap
+max-w-prose
+@prose:flex
+w-prose
+animate-wiggle
+container
+p-4 text-red-500 rounded-lg
+hover:bg-brand md:bg-brand/50 dark:bg-brand-soft

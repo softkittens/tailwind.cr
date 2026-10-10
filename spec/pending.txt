@@ -1,0 +1,14 @@
+# Cases that this compiler builds differently from Tailwind, one per line.
+# The spec holds the list to exactly the cases that differ, so a line is
+# removed here when its case is fixed.
+#
+# theme() in an arbitrary value is Tailwind 3's way to read a token.
+w-[calc(100%_-_theme(spacing.4))]
+#
+# Tailwind builds no rule for font-stretch-25%, and this compiler does.
+font-stretch-25%
+#
+# Tailwind builds these, and this compiler does not: a container type that
+# is no type, and a modifier that stroke-* passes over.
+@container-[#123456]/50
+stroke-1/3

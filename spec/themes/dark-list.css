@@ -1,0 +1,2 @@
+/* `dark:` as a list of selectors, one of them an attribute. */
+@custom-variant dark (.dark &, [data-theme=dark] &);

@@ -1,0 +1,7 @@
+flex
+bg-brand
+bg-brand/50 text-quiet
+bg-accent rounded-card
+animate-wiggle
+animate-fade
+animate-spin hover:text-brand

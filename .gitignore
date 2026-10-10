@@ -1,0 +1,9 @@
+/lib/
+/bin/
+/.shards/
+/docs/
+shard.lock
+*.dwarf
+.DS_Store
+/script/.tailwind/
+/spec/fixtures/

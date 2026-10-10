@@ -1,0 +1,25 @@
+dark:flex
+dark:bg-slate-950 dark:text-slate-50 dark:border-slate-800
+dark:hover:bg-slate-800
+dark:bg-red-500/50
+dark:aria-invalid:ring-red-500/40
+md:dark:flex
+dark:md:hover:flex
+print:dark:flex
+supports-grid:dark:flex
+dark:motion-safe:flex
+dark:before:flex
+dark:marker:flex
+dark:*:flex
+dark:[&_p]:flex
+dark:group-hover:flex
+not-dark:flex
+in-dark:flex
+has-dark:flex
+flex dark:flex hover:flex md:flex dark:md:flex not-dark:flex contrast-more:flex print:flex starting:flex
+dark:dark:flex
+group-dark:flex
+peer-dark:flex
+group-dark/a:flex
+not-group-dark:flex
+in-dark:flex

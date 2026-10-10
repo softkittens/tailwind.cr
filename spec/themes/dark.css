@@ -1,0 +1,2 @@
+/* `dark:` follows a class, not the system. */
+@custom-variant dark (&:where(.dark, .dark *));
