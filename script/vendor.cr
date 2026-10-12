@@ -10,7 +10,9 @@ require "./oracle"
 # static.json holds every class that takes no value, as the default theme
 # builds it: the static utilities, and the keywords of the functional ones
 # (list-disc, transition-all), which are the named values that are not a
-# number and build a rule with no theme at all.
+# number and build a rule with no theme at all. Tailwind suggests most of
+# them; the rest (filter-none) are found by trying each root with every
+# value a suggested keyword has.
 #
 # functional.json holds each functional root as templates, a rule with §
 # where the value goes, and which template each kind of value fills:
@@ -31,6 +33,9 @@ require "./oracle"
 # nested rule or at-rule is {head, nodes}, and properties are the names of
 # the custom properties it registers, whose [syntax, initial] are in
 # properties.json.
+#
+# ignored.json holds, for a theme namespace, the longer namespaces whose
+# tokens it does not read: `--inset` reads no `--inset-shadow-*`.
 #
 # variants.json holds every variant as [name, heads], in Tailwind's order,
 # which is the order classes are sorted by. The heads are what a variant
@@ -85,6 +90,7 @@ class Vendor
     write "functional.json", table(functional)
     write "properties.json", table(@registered.to_a.sort_by!(&.[0]).to_h.transform_values(&.to_json))
     write "variants.json", variants
+    write "ignored.json", ignored
     puts "vendored tailwindcss #{Oracle::VERSION}: #{statics.size} static classes, #{functional.size} functional roots"
     puts "not read from the theme by a token's name, so written by hand in src/tailwind/roots.cr: #{review.join(" ")}"
   end
@@ -113,6 +119,14 @@ class Vendor
     bundle = @oracle.read("dist/lib.js")
     start = bundle.index(%(["container-type","pointer-events")) || abort "the property order is not where it was in dist/lib.js"
     Array(String).from_json(bundle[start..bundle.index!("]", start)]).join("\n") + "\n"
+  end
+
+  # The namespaces a namespace does not read, from the bundle.
+  private def ignored : String
+    bundle = @oracle.read("dist/lib.js")
+    start = bundle.index("new Map([[\"--font\",[") || abort "the ignored theme keys are not where they were in dist/lib.js"
+    pairs = Array({String, Array(String)}).from_json(bundle[(start + 8)..bundle.index!("]])", start) + 1])
+    table(pairs.to_h { |namespace, longer| {namespace, longer.to_json} })
   end
 
   # The variants over no theme, so none is a theme's breakpoint.
@@ -145,10 +159,35 @@ class Vendor
       next unless candidate["kind"]? == "functional" && candidate.dig?("value", "kind") == "named"
       name unless candidate.dig("value", "value").as_s.matches?(NUMERIC)
     end
+    unsuggested = self.unsuggested(names)
+    keywords.concat(unsuggested)
+    names = (names + unsuggested).sort!
     compile(@bare, keywords)
     keep = names.select { |name| own.includes?(name) || (keywords.includes?(name) && rule(@bare, name)) }
     compile(@design, keep)
     keep.compact_map { |name| rule(@design, name).try { |found| {name, found} } }.to_h
+  end
+
+  # The keywords Tailwind does not suggest (filter-none, @container-size):
+  # each root with every value that follows a root in a known class, where
+  # it builds a rule with no theme and Tailwind reads the value as a name
+  # that is no number.
+  private def unsuggested(known : Array(String)) : Array(String)
+    roots = @oracle.keys(@design, "functional")
+    values = Set(String).new
+    known.each do |name|
+      at = name.size
+      while at > 0 && (at = name.rindex('-', at - 1))
+        values << name[(at + 1)..] if at > 0 && roots.includes?(name[0...at])
+      end
+    end
+    tries = roots.flat_map { |root| values.map { |value| "#{root}-#{value}" } } - known
+    tries.each_slice(10_000) { |slice| compile(@bare, slice) }
+    tries.select! { |name| rule(@bare, name) }
+    tries.zip(@oracle.parse(@design, tries)).compact_map do |name, candidate|
+      next unless candidate["kind"]? == "functional" && candidate.dig?("value", "kind") == "named"
+      name unless candidate.dig("value", "value").as_s.matches?(NUMERIC)
+    end
   end
 
   # The rows, and the roots a row does not fully describe.

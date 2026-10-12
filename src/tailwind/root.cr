@@ -36,6 +36,11 @@ module Tailwind
       named(value)
     end
 
+    # The theme namespaces a named value is looked up in, in order.
+    def namespaces : Array(String)
+      @row.theme.map(&.[0])
+    end
+
     # The template a colour fills, with an opacity modifier when the class
     # has one.
     private def color : Int32?

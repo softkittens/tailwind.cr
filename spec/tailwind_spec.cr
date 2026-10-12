@@ -90,6 +90,35 @@ else
       end
     end
 
+    it "reads every recorded and rejected class back as it is written" do
+      theme = Tailwind::Theme.default
+      names = reference["cases"].as_a.flat_map(&.[0].as_s.split(' ')) + reference["rejected"].as_a.map(&.as_s)
+      names.uniq.each do |name|
+        utility = Tailwind::Scan.split(name, ':').last
+        utility = utility.ends_with?('!') ? utility.rchop('!') : utility.lchop('!')
+        written = case reading = Tailwind.read(theme, utility)
+                  in Tailwind::Read::Static then reading.name
+                  in Nil                    then next
+                  in Tailwind::Read::Functional
+                    "#{reading.negative ? "-" : ""}#{reading.root}#{reading.value.try { |value| "-#{value}" }}#{reading.modifier.try { |modifier| "/#{modifier}" }}"
+                  end
+        fail "#{name} is read as #{written}" unless written == utility
+      end
+    end
+
+    it "gives a reason for each class Tailwind rejects, and reads each one it builds" do
+      theme = Tailwind::Theme.default
+      rejected = reference["rejected"].as_a.map(&.as_s) - pending.to_a
+      rejected.each { |name| fail "#{name} has no reason" unless Tailwind.why(theme, name) }
+      # A case of one class is one Tailwind builds; a longer one may hold a class it does not.
+      built = reference["cases"].as_a.map(&.[0].as_s).reject { |classes| classes.includes?(' ') || pending.includes?(classes) }
+      built.each do |name|
+        fail "#{name} has a reason" if Tailwind.why(theme, name)
+        utility = Tailwind::Scan.split(name, ':').last
+        fail "#{name} is not read" unless Tailwind.read(theme, utility) || utility.starts_with?('[')
+      end
+    end
+
     it "builds no rule for a class Tailwind rejects, but the pending ones" do
       theme = Tailwind::Theme.default
       rejected = reference["rejected"].as_a.map(&.as_s)
@@ -114,6 +143,11 @@ describe Tailwind do
            "bg-[#", "[&]:", "[&]:p-1", "[:]", "[a:]", "/", "p-4/", "/4", "p-/", "@", "@:", "@md", "*:", "**", "group-", "group-:p-1",
            "not-", "has-[]:p-1", "data-[]:p-1", "supports-[]:p-1", "min-[]:p-1", "w-1/0", "p-1e9", "é", "p-é", "\u0000", " ", "p-4 m-4"]
     odd.each { |name| Tailwind.compile([name], preflight: false).should contain("@layer theme, base, components, utilities;") }
+    theme = Tailwind::Theme.default
+    odd.each do |name|
+      Tailwind.read(theme, name)
+      Tailwind.why(theme, name).nil?.should eq(!Tailwind.parse(theme, name).nil?)
+    end
   end
 
   it "builds no rule for a value that would end its declaration or selector" do
@@ -333,5 +367,124 @@ describe Tailwind do
     css.should_not contain("--gap")
     css.should_not contain("margin")
     Tailwind.compile(["flex"], theme, preflight: false).should_not contain("@layer theme {")
+  end
+
+  it "builds no rule from a token of a longer namespace" do
+    theme = Tailwind::Theme.default
+    ["top-shadow-2xs", "inset-x-shadow-sm", "font-weight-bold"].each { |name| Tailwind.parse(theme, name).should be_nil }
+    ["inset-shadow-2xs", "font-bold", "font-sans", "text-shadow-sm", "top-4"].each { |name| Tailwind.parse(theme, name).should_not be_nil }
+  end
+
+  it "says how a class without its variants is read" do
+    theme = Tailwind::Theme.load("@theme { --color-ink: #111; }")
+    {
+      "flex"                  => Tailwind::Read::Static.new("flex"),
+      "-bottom-full"          => Tailwind::Read::Static.new("-bottom-full"),
+      "container"             => Tailwind::Read::Static.new("container"),
+      "border-collapse"       => Tailwind::Read::Static.new("border-collapse"),
+      "border-t-2"            => Tailwind::Read::Functional.new("border-t", "2", nil, false),
+      "-mt-4"                 => Tailwind::Read::Functional.new("mt", "4", nil, true),
+      "bg-ink/50"             => Tailwind::Read::Functional.new("bg", "ink", "50", false),
+      "bg-ink/50!"            => Tailwind::Read::Functional.new("bg", "ink", "50", false),
+      "text-shadow-lg"        => Tailwind::Read::Functional.new("text-shadow", "lg", nil, false),
+      "text-lg"               => Tailwind::Read::Functional.new("text", "lg", nil, false),
+      "rounded"               => Tailwind::Read::Functional.new("rounded", nil, nil, false),
+      "w-1/2"                 => Tailwind::Read::Functional.new("w", "1", "2", false),
+      "p-[13px]"              => Tailwind::Read::Functional.new("p", "[13px]", nil, false),
+      "[mask-type:luminance]" => nil,
+      "hero"                  => nil,
+      "card-title"            => nil,
+      "-hero"                 => nil,
+      ""                      => nil,
+    }.each do |name, reading|
+      Tailwind.read(theme, name).should eq(reading)
+    end
+  end
+
+  it "reads a class that does not build by the longest root its name starts with" do
+    theme = Tailwind::Theme.default
+    {
+      "text-shadow-nope" => Tailwind::Read::Functional.new("text-shadow", "nope", nil, false),
+      "bg-linear-nope"   => Tailwind::Read::Functional.new("bg-linear", "nope", nil, false),
+      "border-t-nope/50" => Tailwind::Read::Functional.new("border-t", "nope", "50", false),
+      "-mt-nope"         => Tailwind::Read::Functional.new("mt", "nope", nil, true),
+      "bg"               => Tailwind::Read::Functional.new("bg", nil, nil, false),
+      "gap-x"            => Tailwind::Read::Functional.new("gap-x", nil, nil, false),
+      "bg-linear"        => Tailwind::Read::Functional.new("bg-linear", nil, nil, false),
+      "bg-ink/50/2"      => Tailwind::Read::Functional.new("bg", "ink", "50/2", false),
+      "-p-4"             => nil,
+      "-flex"            => nil,
+      "hidden/50"        => nil,
+      "[color:red;x]"    => nil,
+    }.each do |name, reading|
+      Tailwind.parse(theme, name).should be_nil
+      Tailwind.read(theme, name).should eq(reading)
+    end
+  end
+
+  it "reads a class by a shorter root when the longest does not build it" do
+    theme = Tailwind::Theme.load("@theme { --color-shadow-brand: #1d4ed8; }")
+    Tailwind.read(theme, "text-shadow-brand").should eq(Tailwind::Read::Functional.new("text", "shadow-brand", nil, false))
+    Tailwind.read(Tailwind::Theme.default, "text-shadow-brand").should eq(Tailwind::Read::Functional.new("text-shadow", "brand", nil, false))
+  end
+
+  it "says why a class builds no rule" do
+    theme = Tailwind::Theme.load("@theme { --color-*: initial; --color-ink: #111; --radius-*: initial; --radius-sm: 0.25rem; --radius-md: 0.375rem; }")
+    colors = ["--background-color", "--color", "--background-image"]
+    spacing = ["--padding", "--spacing"]
+    {
+      "flex"               => nil,
+      "md:hover:bg-ink/50" => nil,
+      "rounded-md"         => nil,
+      "hero"               => Tailwind::Why::NotUtility.new,
+      "md:hero"            => Tailwind::Why::NotUtility.new,
+      "dank:hero"          => Tailwind::Why::NotUtility.new,
+      "dank:flex"          => Tailwind::Why::UnknownVariant.new("dank"),
+      "md:dank:flex!"      => Tailwind::Why::UnknownVariant.new("dank"),
+      "3xl:flex"           => Tailwind::Why::UnknownVariant.new("3xl"),
+      "group-dank:bg-nope" => Tailwind::Why::UnknownVariant.new("group-dank"),
+      "bg-red-500"         => Tailwind::Why::NoValue.new("bg", "red-500", colors),
+      "md:bg-red-500/50"   => Tailwind::Why::NoValue.new("bg", "red-500", colors),
+      "bg"                 => Tailwind::Why::NoValue.new("bg", nil, colors),
+      "rounded-huge"       => Tailwind::Why::NoValue.new("rounded", "huge", ["--radius"]),
+      "p-13.3"             => Tailwind::Why::NoValue.new("p", "13.3", spacing),
+      "p-[13px]-x"         => Tailwind::Why::NoValue.new("p", "[13px]-x", spacing),
+      "-mt-nope"           => Tailwind::Why::NoValue.new("mt", "nope", ["--margin", "--spacing"]),
+      "-p-4"               => Tailwind::Why::NoNegative.new("p"),
+      "-p-4/2"             => Tailwind::Why::NoNegative.new("p"),
+      "-p-nope"            => Tailwind::Why::NoNegative.new("p"),
+      "-hero"              => Tailwind::Why::NotUtility.new,
+      "p-4/2/3"            => Tailwind::Why::NoModifier.new("p", "2/3"),
+      "hero/2/3"           => Tailwind::Why::NotUtility.new,
+      "gap-x"              => Tailwind::Why::NoValue.new("gap-x", nil, ["--gap", "--spacing"]),
+      "[color]"            => Tailwind::Why::NotUtility.new,
+      "-mt-auto"           => Tailwind::Why::NoNegative.new("mt-auto"),
+      "-inset-shadow-sm"   => Tailwind::Why::NoNegative.new("inset-shadow"),
+      "-flex"              => Tailwind::Why::NoNegative.new("flex"),
+      "p-4/2"              => Tailwind::Why::NoModifier.new("p", "2"),
+      "bg-ink/abc"         => Tailwind::Why::NoModifier.new("bg", "abc"),
+      "hidden/50"          => Tailwind::Why::NoModifier.new("hidden", "50"),
+      "w-full/2"           => Tailwind::Why::NoModifier.new("w-full", "2"),
+      "p-[13px]/50"        => Tailwind::Why::NoModifier.new("p", "50"),
+      "p-[1px;color:red]"  => Tailwind::Why::Refused.new("[1px;color:red]"),
+      "p-(--x;y)"          => Tailwind::Why::Refused.new("(--x;y)"),
+      "bg-ink/[1}body{x]"  => Tailwind::Why::Refused.new("[1}body{x]"),
+      "[color:red;x]"      => Tailwind::Why::Refused.new("red;x"),
+    }.each do |name, reason|
+      Tailwind.why(theme, name).should eq(reason)
+    end
+  end
+
+  it "names the namespaces a root reads, in lookup order, and the theme names the tokens in each" do
+    theme = Tailwind::Theme.load("@theme { --text-*: initial; --text-lg: 1.125rem; --text-lg--line-height: 1.75; --text-shadow-glow: 0 0 4px #fff; --color-*: initial; --color-ink: #111; }")
+    reason = Tailwind.why(theme, "text-nope").as(Tailwind::Why::NoValue)
+    reason.namespaces.should eq(["--text-color", "--color", "--text"])
+    reason.namespaces.map { |namespace| theme.names(namespace) }.should eq([[] of String, ["ink"], ["lg"]])
+    reason = Tailwind.why(theme, "text-shadow-nope").as(Tailwind::Why::NoValue)
+    reason.namespaces.should eq(["--text-shadow", "--color"])
+    theme.names("--text-shadow").should eq(["glow"])
+    reason = Tailwind.why(Tailwind::Theme.default, "max-w-nope").as(Tailwind::Why::NoValue)
+    reason.namespaces.should eq(["--max-width", "--spacing", "--container"])
+    Tailwind::Theme.default.names("--container").should eq(["3xs", "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl"])
   end
 end

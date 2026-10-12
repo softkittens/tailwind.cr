@@ -95,6 +95,10 @@ module Tailwind
     MATH     = /\A(calc|clamp|max|min|--spacing)\(/i
     COLOR    = /\A(color|color-mix|contrast-color|device-cmyk|hsla?|hwb|lab|lch|light-dark|oklab|oklch|rgba?|--alpha)\(/i
 
+    def namespaces : Array(String)
+      (["--#{@name}"] + super + ["--color"]).uniq!
+    end
+
     # A shadow's colour is told from its value by type: only `drop-shadow`
     # lists the theme's colours.
     private def color : Int32?

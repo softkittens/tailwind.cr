@@ -81,4 +81,17 @@ describe Tailwind::Theme do
     error = expect_raises(Tailwind::Error) { Tailwind::Theme.load("@theme {\n  --color-brand #fff;\n}", base) }
     error.line.should eq(2)
   end
+
+  it "reads no token of a longer namespace, and names none" do
+    theme = Tailwind::Theme.default
+    theme.resolve("--inset", "shadow-2xs").should be_nil
+    theme.resolve("--font", "weight-bold").should be_nil
+    theme.resolve("--font-weight", "bold").should eq("var(--font-weight-bold)")
+    theme.resolve("--inset-shadow", "2xs").should eq("var(--inset-shadow-2xs)")
+    theme.names("--font").should eq(["sans", "serif", "mono"])
+    theme.names("--text").should eq(["xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl", "9xl"])
+    theme.names("--inset").should be_empty
+    theme.names("--spacing").should be_empty
+    theme.names("--nope").should be_empty
+  end
 end

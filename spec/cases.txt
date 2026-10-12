@@ -449,3 +449,9 @@ border border-2 border-t border-red-500 border-dashed rounded-lg rounded-t-none 
 transition duration-300 ease-out delay-75 animate-spin
 container mx-auto px-4 sm:px-6 lg:px-8
 group-hover:p-1 peer-focus:p-1 not-first:p-1 has-checked:p-1 in-hover:p-1 aria-busy:p-1 data-active:p-1 nth-3:p-1 supports-grid:p-1 min-[400px]:p-1 max-[600px]:p-1 max-md:p-1 max-lg:p-1 sm:p-1 md:p-1 lg:p-1 @md:p-1 @max-md:p-1 @lg:p-1 [&_p]:p-1 dark:p-1 *:p-1 **:p-1 p-1
+
+
+# Keywords Tailwind builds and does not suggest.
+filter-none
+backdrop-filter-none
+@container-size

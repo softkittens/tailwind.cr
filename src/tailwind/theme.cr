@@ -1,3 +1,4 @@
+require "json"
 require "./ast"
 require "./value"
 
@@ -24,6 +25,10 @@ module Tailwind
   # `dark:` that selector instead of the `prefers-color-scheme` media query.
   class Theme
     DEFAULT_CSS = {{ read_file("#{__DIR__}/vendor/theme.css") }}
+
+    # For a namespace, the longer namespaces whose tokens it does not read,
+    # as script/vendor.cr writes them: `--inset` reads no `--inset-shadow-*`.
+    IGNORED = Hash(String, Array(String)).from_json({{ read_file("#{__DIR__}/vendor/ignored.json") }})
 
     getter vars = {} of String => String
     # Tokens of `@theme inline`: a utility writes their value, not var().
@@ -107,7 +112,24 @@ module Tailwind
     # value itself for an inline token.
     def resolve(namespace : String, key : String) : String?
       return nil unless key.matches?(Value::NAME)
-      reference("#{namespace}-#{key.gsub('.', '_')}")
+      name = "#{namespace}-#{key.gsub('.', '_')}"
+      reference(name) unless ignored?(namespace, name)
+    end
+
+    # The names a namespace's tokens give a utility, in theme order:
+    # `red-500` for `--color-red-500`. A token's own sub-token
+    # (`--text-lg--line-height`) gives none.
+    def names(namespace : String) : Array(String)
+      vars.keys.compact_map do |name|
+        rest = name.lchop?("#{namespace}-") || next
+        rest unless rest.empty? || rest.includes?("--") || ignored?(namespace, name)
+      end
+    end
+
+    # Whether `name` is a token of a longer namespace that `namespace` does
+    # not read.
+    private def ignored?(namespace : String, name : String) : Bool
+      IGNORED[namespace]?.try(&.any? { |longer| name == longer || name.starts_with?("#{longer}-") }) || false
     end
 
     def reference(name : String) : String?

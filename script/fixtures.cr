@@ -33,7 +33,9 @@ class Fixtures
   # What Tailwind may not take after a root, a static utility, or as a variant.
   ODD_VALUES = VALUES + ["-0.3", "-150", "-red-500", "-red-500/50", "-red-500/150", "-lg", "-lg/7", "-full", "-auto", "-none",
                          "-px", "-nope", "-[13px]/50", "-3/[0.5]", "-[]", "-()", "-3!", "--3", "-03", "-3.50", "-1e3", "-[13px]-x",
-                         "-[1px;2px]", "-[1px}a{b]", "-[1px)]", "-(--zz;a)", "-(--zz}a{b)", "-[13px]/[1;2]", "-[13px]/[1}a{b]"]
+                         "-[1px;2px]", "-[1px}a{b]", "-[1px)]", "-(--zz;a)", "-(--zz}a{b)", "-[13px]/[1;2]", "-[13px]/[1}a{b]",
+                         # A token of a longer namespace: `--inset-shadow-2xs` is not `--inset`'s.
+                         "-shadow-2xs", "-weight-bold"]
   ODD_STATICS  = ["/50", "-3", "-[13px]", "-nope"]
   ODD_VARIANTS = ["hover", "md", "group-hover", "not-hover", "has", "data", "aria-nope", "nth-x", "supports", "min", "max-nope",
                   "@nope", "group", "peer-", "in", "[", "[]", "[>p]", "dark/x", "md/x", "hover/x", "nth-1.5", "data-[]", "aria-[]",

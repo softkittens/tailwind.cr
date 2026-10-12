@@ -104,6 +104,68 @@ Tailwind.compile(candidates, theme)
 A candidate's `rules.nodes` are `Tailwind::Decl` and `Tailwind::Block`
 (a nested rule or at-rule). A candidate given twice is printed twice.
 
+### How a class is read
+
+`Tailwind.read(theme, utility)` answers the class or root that reads a class
+without its variants, whether or not it builds:
+
+| Class | Answer |
+|---|---|
+| `flex`, `-bottom-full` | `Tailwind::Read::Static`: `name` |
+| `border-t-2` | `Tailwind::Read::Functional`: `root` `border-t`, `value` `2` |
+| `-mt-4` | `root` `mt`, `value` `4`, `negative` |
+| `bg-ink/50` | `root` `bg`, `value` `ink`, `modifier` `50` |
+| `w-1/2` | `root` `w`, `value` `1`, `modifier` `2` |
+| `p-[13px]` | `root` `p`, `value` `[13px]` |
+| `rounded` | `root` `rounded`, `value` nil |
+| `hero`, `-p-4`, `[mask-type:luminance]` | nil |
+
+A class that builds is read by the root that builds it, the longest tried
+first: `text-shadow-lg` by `text-shadow`, and `text-shadow-brand` by `text`
+over a theme with a `--color-shadow-brand`. One that does not build is read
+by the longest root its name starts with: `bg-linear-nope` by `bg-linear`.
+Nil is a word that is no utility, an arbitrary property, and the negative of
+a root that has none.
+
+Split the variants off with `Tailwind::Scan.split(name, ':')`, which keeps a
+`:` inside brackets.
+
+### Why a class does not build
+
+`Tailwind.why(theme, name)` answers nil for a class that builds, and for any
+other one of these, as data for the caller to put into words:
+
+| Answer | Carries | For |
+|---|---|---|
+| `Tailwind::Why::NotUtility` | | `hero`, `md:hero` |
+| `Tailwind::Why::UnknownVariant` | `variant`, as written | `dank:flex` |
+| `Tailwind::Why::NoValue` | `root`, `value`, `namespaces` | `bg-red-500` over a theme with no `--color-red-500`, `rounded-huge`, `p-13.3` |
+| `Tailwind::Why::NoNegative` | `root` | `-p-4` |
+| `Tailwind::Why::NoModifier` | `root`, `modifier` | `p-4/2` |
+| `Tailwind::Why::Refused` | `value`, as written | `p-[1px;color:red]` |
+
+`namespaces` is each theme namespace the root looks a name up in, in that
+order. `theme.names(namespace)` gives the names the theme has there:
+
+```crystal
+case why = Tailwind.why(theme, "rounded-huge")
+when Tailwind::Why::NoValue
+  why.namespaces                 # => ["--radius"]
+  theme.names(why.namespaces[0]) # => ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl"]
+end
+```
+
+- The names are the theme's tokens only. The keywords of a root
+  (`rounded-full`, `rounded-none`) and its numbers are not among them.
+- A word that is a root's name alone answers `NoValue` with a nil `value`
+  when the root builds nothing alone: `bg`, `row`, `p`.
+- `NoNegative` and `NoModifier` name the class in `root` when it is a class
+  that takes no value: `mt-auto` for `-mt-auto`, `hidden` for `hidden/50`.
+- A class of a keyword-only family with a value it does not have
+  (`overflow-nope`) answers `NotUtility`: Tailwind has no root `overflow`.
+- A class with several problems answers one: a variant, then an arbitrary
+  value Tailwind refuses, the negative, the modifier, the value.
+
 ## Theme
 
 `Tailwind::Theme.load(css)` reads `@theme` blocks, and one `@custom-variant
@@ -186,7 +248,6 @@ Setting the class or attribute is the page's own script.
   token. Write the variable: `w-[calc(100%-var(--spacing)*4)]`, not
   `w-[calc(100%-theme(spacing.4))]`.
 - The 3 builds in `spec/pending.txt`.
-- A reason for a class it does not build. `Tailwind.parse` answers nil.
 
 A static utility is written as Tailwind's default theme builds it. One that
 reads a `--default-*` token keeps reading it under a theme that removed it.
@@ -217,6 +278,7 @@ Tailwind what each class builds and writes `src/tailwind/vendor/`:
 | `functional.json` | every root that takes one, as templates with `§` where the value goes, and which template each kind of value fills |
 | `properties.json` | the custom properties utilities register |
 | `variants.json` | every variant in Tailwind's order, and what each one that takes no value wraps a rule in |
+| `ignored.json` | for a theme namespace, the longer namespaces whose tokens it does not read |
 | `property_order.txt` | the order utilities are sorted by |
 | `theme.css`, `preflight.css` | Tailwind's default theme and base styles |
 
@@ -224,11 +286,12 @@ The Crystal source, in `src/tailwind/`:
 
 | File | Does |
 |---|---|
-| `utilities.cr` | splits a utility into a root and a value |
+| `utilities.cr` | splits a utility into a root and a value, and says how it read it |
 | `root.cr` | fills the root's template from the value: arbitrary, a theme token, a number |
 | `roots.cr` | the roots whose rule is more than a template: `text-*`, the gradients, the shadows, `@container` |
 | `value.cr` | decodes an arbitrary value and tells its type |
 | `variants.cr` | the variants that take a value or wrap another (`group-`, `not-`, `data-`, `min-`), and each one's sort order |
+| `why.cr` | says why a utility does not build |
 | `fallback.cr` | writes a `color-mix()` declaration twice, for browsers without it |
 | `print.cr` | lifts at-rules outside rules, all of them when flat, merges neighbours, prints |
 | `theme.cr` | parses `@theme` over the default theme |

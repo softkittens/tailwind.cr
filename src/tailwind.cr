@@ -6,6 +6,7 @@ require "./tailwind/tables"
 require "./tailwind/utilities"
 require "./tailwind/fallback"
 require "./tailwind/variants"
+require "./tailwind/why"
 require "./tailwind/print"
 
 # Tailwind CSS classes compiled to a stylesheet. The output for a set of
@@ -54,11 +55,35 @@ module Tailwind
     utility = parts.pop
     return nil if utility.empty? || parts.size > Variants::DEPTH
     important = utility.ends_with?('!') || utility.starts_with?('!')
-    utility = utility.ends_with?('!') ? utility.rchop('!') : utility.lchop('!')
+    utility = bare(utility)
     variants = parts.map { |part| Variants.resolve(theme, part) || return nil }
     rules = Utilities.resolve(theme, utility) || return nil
     rules = Rules.new(rules.nodes, [Variants::CONTENT] + rules.properties) if variants.any?(&.content)
     Candidate.new(name, variants, rules, important)
+  end
+
+  # The class or root that reads a class without its variants, whether or
+  # not it builds: a class that takes no value, or a root with its value. A
+  # class that does not build is read by the longest root its name starts
+  # with. Nil when none reads it: a word that is no utility, an arbitrary
+  # property, the negative of a root that has none.
+  def self.read(theme : Theme, utility : String) : Reading?
+    Utilities.read(theme, bare(utility))
+  end
+
+  # Why a class builds no rule: nil for one that does.
+  def self.why(theme : Theme, name : String) : Reason?
+    return nil if parse(theme, name)
+    parts = Scan.split(name, ':')
+    reason = Why.of(theme, bare(parts.pop))
+    return Why::NotUtility.new if reason.is_a?(Why::NotUtility) || parts.size > Variants::DEPTH
+    parts.each { |part| return Why::UnknownVariant.new(part) unless Variants.resolve(theme, part) }
+    reason || Why::NotUtility.new
+  end
+
+  # A utility without the `!` that makes it important.
+  private def self.bare(utility : String) : String
+    utility.ends_with?('!') ? utility.rchop('!') : utility.lchop('!')
   end
 
   # Tailwind's order: by variants, then by the first CSS property that
