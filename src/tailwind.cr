@@ -33,9 +33,19 @@ module Tailwind
 
   # The stylesheet for `classes` over `theme`: the ones that are utilities,
   # and no rule for any other word.
-  def self.compile(classes : Enumerable(String), theme : Theme = Theme.default, preflight : Bool = true) : String
-    candidates = classes.to_set.compact_map { |name| parse(theme, name) }
-    emit(theme, sort(candidates), preflight)
+  #
+  # `flat` writes it for browsers without CSS nesting or media range syntax:
+  # no at-rule inside a rule, and `min-width` for a width query. `reads` is
+  # other CSS served with the sheet: a theme token it reads as `var(--name)`
+  # is written to the theme layer though no class reads it.
+  def self.compile(classes : Enumerable(String), theme : Theme = Theme.default, preflight : Bool = true, flat : Bool = false, reads : String = "") : String
+    compile(classes.to_set.compact_map { |name| parse(theme, name) }, theme, preflight, flat, reads)
+  end
+
+  # The stylesheet for candidates: what `parse` answers, as it is or with
+  # rules the caller put in its place. They are sorted here.
+  def self.compile(candidates : Array(Candidate), theme : Theme = Theme.default, preflight : Bool = true, flat : Bool = false, reads : String = "") : String
+    emit(theme, sort(candidates), preflight, flat, reads)
   end
 
   # A class as a candidate, or nil when it is not a utility.
@@ -137,13 +147,13 @@ module Tailwind
     byte >= '0'.ord && byte <= '9'.ord
   end
 
-  private def self.emit(theme : Theme, candidates : Array(Candidate), preflight : Bool) : String
+  private def self.emit(theme : Theme, candidates : Array(Candidate), preflight : Bool, flat : Bool, reads : String) : String
     sheet = [] of Block
     candidates.each do |candidate|
       # After sorting: Tailwind orders a class by the rule as first written.
       nodes = Variants.wrap(Fallback.rules(theme, candidate.rules).nodes, candidate.variants)
       nodes = Print.important(nodes) if candidate.important
-      Print.flatten(".#{escape(candidate.name)}", nodes).each { |item| Print.append(sheet, item) }
+      Print.flatten(".#{escape(candidate.name)}", nodes, flat).each { |item| Print.append(sheet, item) }
     end
     utilities = String.build { |io| sheet.each { |item| Print.block(io, item, 2) } }
     base = preflight ? preflight_css(theme) : ""
@@ -154,7 +164,7 @@ module Tailwind
       io << HEADER
       io << "@layer properties;\n" unless properties.empty?
       io << "@layer theme, base, components, utilities;\n"
-      vars = used_vars(theme, utilities + base)
+      vars = used_vars(theme, utilities + base + reads)
       unless vars.empty?
         io << "@layer theme {\n  :root, :host {\n"
         vars.each { |name, value| io << "    " << name << ": " << value << ";\n" }

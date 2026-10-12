@@ -60,4 +60,25 @@ describe Tailwind::Theme do
       error.line.should eq(line)
     end
   end
+
+  it "loads over a base the caller gives, and leaves the base as it was" do
+    base = Tailwind::Theme.load("@theme { --spacing: 0.25rem; --breakpoint-md: 48rem; --color-ink: #111; }", Tailwind::Theme.new)
+    base.vars.keys.should eq(["--spacing", "--breakpoint-md", "--color-ink"])
+    theme = Tailwind::Theme.load("@theme inline { --color-ink: #222; --color-paper: #fff; }\n@custom-variant dark (&:where(.dark *));", base)
+    theme.vars.should eq({"--spacing" => "0.25rem", "--breakpoint-md" => "48rem", "--color-ink" => "#222", "--color-paper" => "#fff"})
+    theme.resolve("--color", "ink").should eq("#222")
+    theme.resolve("--color", "red-500").should be_nil
+    theme.keyframes.should be_empty
+    base["--color-ink"]?.should eq("#111")
+    base.resolve("--color", "ink").should eq("var(--color-ink)")
+    base.has?("--color-paper").should be_false
+    base.dark.should be_nil
+    Tailwind::Theme.load("", base).vars.should eq(base.vars)
+  end
+
+  it "says the line in the caller's CSS when it loads over a base" do
+    base = Tailwind::Theme.load("@theme {\n  --spacing: 0.25rem;\n\n\n}\n", Tailwind::Theme.new)
+    error = expect_raises(Tailwind::Error) { Tailwind::Theme.load("@theme {\n  --color-brand #fff;\n}", base) }
+    error.line.should eq(2)
+  end
 end

@@ -75,6 +75,21 @@ else
       end
     end
 
+    it "writes no at-rule inside a rule and no width range for a recorded case when flat" do
+      reference["cases"].as_a.each do |example|
+        classes = example[0].as_s
+        open = [] of String
+        Tailwind.compile(classes.split(' '), preflight: false, flat: true).each_line do |line|
+          text = line.strip
+          next open.pop if text == "}"
+          next unless text.ends_with?(" {")
+          fail "#{classes}: #{text} inside #{open.last}" if text.starts_with?('@') && open.any? { |head| !head.starts_with?('@') }
+          fail "#{classes}: #{text}" if text.matches?(/\A@media (not )?\(width [<>]/)
+          open << text
+        end
+      end
+    end
+
     it "builds no rule for a class Tailwind rejects, but the pending ones" do
       theme = Tailwind::Theme.default
       rejected = reference["rejected"].as_a.map(&.as_s)
@@ -197,5 +212,126 @@ describe Tailwind do
     css.should contain("animation: var(--animate-wiggle);")
     css.should contain("@keyframes wiggle {\n  0%, 100% {\n    rotate: -3deg;\n  }")
     css.should_not contain("@keyframes spin")
+  end
+
+  it "writes no nesting and no range syntax when flat" do
+    theme = Tailwind::Theme.load("@theme { --color-paper: #ffffff; --breakpoint-*: initial; --breakpoint-sm: 40rem; --breakpoint-md: 48rem; }")
+    css = Tailwind.compile(["container", "text-paper/80", "max-md:hidden", "md:p-4"], theme, preflight: false, flat: true)
+    css.should contain(<<-CSS)
+      @layer utilities {
+        .container {
+          width: 100%;
+        }
+        @media (min-width: 40rem) {
+          .container {
+            max-width: 40rem;
+          }
+        }
+        @media (min-width: 48rem) {
+          .container {
+            max-width: 48rem;
+          }
+        }
+        .text-paper\\/80 {
+          color: color-mix(in srgb, #ffffff 80%, transparent);
+        }
+        @supports (color: color-mix(in lab, red, red)) {
+          .text-paper\\/80 {
+            color: color-mix(in oklab, var(--color-paper) 80%, transparent);
+          }
+        }
+        @media not all and (min-width: 48rem) {
+          .max-md\\:hidden {
+            display: none;
+          }
+        }
+        @media (min-width: 48rem) {
+          .md\\:p-4 {
+            padding: calc(var(--spacing) * 4);
+          }
+        }
+      }
+
+      CSS
+    nested = Tailwind.compile(["container", "text-paper/80", "max-md:hidden", "md:p-4"], theme, preflight: false)
+    nested.should contain("  .text-paper\\/80 {\n    color: color-mix(in srgb, #ffffff 80%, transparent);\n    @supports")
+    nested.should contain("@media (width < 48rem) {")
+  end
+
+  it "keeps a flat class's variants around its fallback, in one at-rule" do
+    theme = Tailwind::Theme.load("@theme { --color-paper: #ffffff; }")
+    css = Tailwind.compile(["md:hover:text-paper/80", "md:flex"], theme, preflight: false, flat: true)
+    css.should contain(<<-CSS)
+      @layer utilities {
+        @media (min-width: 48rem) {
+          .md\\:flex {
+            display: flex;
+          }
+          @media (hover: hover) {
+            .md\\:hover\\:text-paper\\/80:hover {
+              color: color-mix(in srgb, #ffffff 80%, transparent);
+            }
+            @supports (color: color-mix(in lab, red, red)) {
+              .md\\:hover\\:text-paper\\/80:hover {
+                color: color-mix(in oklab, var(--color-paper) 80%, transparent);
+              }
+            }
+          }
+        }
+      }
+
+      CSS
+  end
+
+  it "writes a flat media query of one condition without range syntax, and any other as it is" do
+    {
+      "min-[600px]:flex"                        => "@media (min-width: 600px) {",
+      "max-[calc(10px+1rem)]:flex"              => "@media not all and (min-width: calc(10px + 1rem)) {",
+      "not-md:flex"                             => "@media not all and (min-width: 48rem) {",
+      "not-max-md:flex"                         => "@media (min-width: 48rem) {",
+      "not-hover:flex"                          => "@media not all and (hover: hover) {",
+      "print:flex"                              => "@media print {",
+      "@md:flex"                                => "@container (width >= 28rem) {",
+      "[@media(width>=1px)and(width<5px)]:flex" => "@media (width>=1px)and(width<5px) {",
+      "[@media(width>=600px)]:flex"             => "@media (width>=600px) {",
+      "[@media(width_>=_600px)]:flex"           => "@media (min-width: 600px) {",
+    }.each do |name, head|
+      Tailwind.compile([name], preflight: false, flat: true).should contain(head)
+    end
+  end
+
+  it "compiles candidates the caller parsed and changed" do
+    theme = Tailwind::Theme.default
+    classes = ["md:text-6xl", "p-4", "hero", "hover:bg-red-500/50"]
+    candidates = classes.compact_map { |name| Tailwind.parse(theme, name) }
+    Tailwind.compile(candidates, theme, flat: true, reads: "a { color: var(--color-blue-500) }").should eq(
+      Tailwind.compile(classes, theme, flat: true, reads: "a { color: var(--color-blue-500) }"))
+
+    fluid = candidates.map do |candidate|
+      next candidate unless candidate.name.starts_with?("md:")
+      nodes = candidate.rules.nodes.map do |node|
+        next node unless node.is_a?(Tailwind::Decl) && node.property == "font-size"
+        Tailwind::Decl.new("font-size", "clamp(var(--text-5xl), calc(1rem + 2.75 * 1.25vw), #{node.value})").as(Tailwind::Node)
+      end
+      candidate.copy_with(rules: candidate.rules.copy_with(nodes: nodes))
+    end
+    css = Tailwind.compile(fluid, theme, preflight: false)
+    css.should contain("      font-size: clamp(var(--text-5xl), calc(1rem + 2.75 * 1.25vw), var(--text-6xl));\n      line-height: var(--tw-leading, var(--text-6xl--line-height));")
+    css.should contain("--text-5xl: 3rem;")
+    css.index!(".p-4 {").should be < css.index!(".md\\:text-6xl {")
+
+    own = Tailwind::Candidate.new("card", [] of Tailwind::Variants::Variant, Tailwind::Rules.new([Tailwind::Block.new("@media print", [Tailwind::Decl.new("display", "none").as(Tailwind::Node)]).as(Tailwind::Node)]), false)
+    Tailwind.compile([own], preflight: false).should contain("  @media print {\n    .card {\n      display: none;\n    }\n  }")
+  end
+
+  it "writes the tokens that other CSS reads, and the tokens those read" do
+    theme = Tailwind::Theme.load("@theme { --color-ink: #111; --color-link: var(--color-ink); --color-quiet: #64748b; }")
+    reads = "a { color: var(--color-link); margin: var(--gap, 1rem); }"
+    css = Tailwind.compile(["flex"], theme, preflight: false, reads: reads)
+    css.should contain("  :root, :host {\n    --color-ink: #111;\n    --color-link: var(--color-ink);\n  }")
+    css.should_not contain("--color-quiet")
+    css.should_not contain("--gap")
+    css.should_not contain("margin")
+    Tailwind.compile(["flex"], theme, preflight: false).should_not contain("@layer theme {")
   end
 end

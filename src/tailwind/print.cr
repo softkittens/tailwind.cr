@@ -9,29 +9,49 @@ module Tailwind
     # `nodes` under `selector`, as rules and the at-rules around them. A
     # rule with declarations of its own is written as it is, at-rules and
     # all. One with none is only a wrapper: its nested rules take its
-    # selector, and its at-rules move outside it.
-    def self.flatten(selector : String, nodes : Array(Node)) : Array(Block)
-      return [Block.new(selector, distinct(nodes))] if declares?(nodes)
-      nodes.flat_map { |node| node.is_a?(Block) ? nested(selector, node) : [] of Block }
+    # selector, and its at-rules move outside it. `flat` writes no rule as
+    # it is: every at-rule moves outside, with the rule repeated inside it,
+    # and a media query is written without range syntax.
+    def self.flatten(selector : String, nodes : Array(Node), flat : Bool = false) : Array(Block)
+      return [Block.new(selector, distinct(nodes))] if declares?(nodes) && !flat
+      lift(selector, nodes, flat)
     end
 
     # A nested rule under `selector`, or an at-rule moved outside it. A
     # list of selectors stands in the nested one as `:is(…)`.
-    private def self.nested(selector : String, block : Block) : Array(Block)
-      return [Block.new(block.head, lift(selector, block.nodes))] if block.at_rule?
+    private def self.nested(selector : String, block : Block, flat : Bool) : Array(Block)
+      if block.at_rule?
+        return [Block.new(flat ? ranged(block.head) : block.head, lift(selector, block.nodes, flat).map(&.as(Node)))]
+      end
       parent = Scan.split(selector, ',').size > 1 ? ":is(#{selector})" : selector
-      flatten(block.head.gsub('&', parent), block.nodes)
+      flatten(block.head.gsub('&', parent), block.nodes, flat)
     end
 
-    # The contents of an at-rule moved outside `selector`: each run of
-    # declarations becomes a rule, and each at-rule inside moves out too.
-    private def self.lift(selector : String, nodes : Array(Node)) : Array(Node)
+    # `nodes` moved outside `selector`: each run of declarations becomes a
+    # rule, and each at-rule and nested rule moves out too.
+    private def self.lift(selector : String, nodes : Array(Node), flat : Bool) : Array(Block)
       runs = nodes.chunk_while { |a, z| a.is_a?(Decl) && z.is_a?(Decl) }
       runs.flat_map do |run|
         first = run.first
-        next nested(selector, first).map(&.as(Node)) if first.is_a?(Block)
-        declares?(run) ? [Block.new(selector, distinct(run)).as(Node)] : [] of Node
+        next nested(selector, first, flat) if first.is_a?(Block)
+        declares?(run) ? [Block.new(selector, distinct(run))] : [] of Block
       end.to_a
+    end
+
+    # A media query of one condition as browsers without range syntax read
+    # it: `(width >= X)` as `(min-width: X)`, `(width < X)` as `not all and
+    # (min-width: X)`, and `not (…)` as `not all and (…)`. Any other at-rule
+    # as it is.
+    private def self.ranged(head : String) : String
+      match = head.match(/\A@media (not )?(\(.+\))\z/m) || return head
+      query = match[2]
+      return head unless Scan.close(query, 0) == query.size - 1
+      negated = !match[1]?.nil?
+      if width = query.match(/\A\(width (>=|<) (.+)\)\z/m)
+        negated ^= width[1] == "<"
+        query = "(min-width: #{width[2]})"
+      end
+      "@media #{negated ? "not all and " : ""}#{query}"
     end
 
     # Whether any of `nodes` is a declaration that is printed.

@@ -32,6 +32,77 @@ caller can pass every class in its templates without sorting them first.
 | `classes` | | the classes to build |
 | `theme` | `Tailwind::Theme.default` | the design tokens |
 | `preflight` | `true` | include Tailwind's base styles |
+| `flat` | `false` | write the sheet for browsers without CSS nesting or media range syntax |
+| `reads` | `""` | other CSS served with the sheet; the theme tokens it reads are written too |
+
+### Flat output
+
+Tailwind writes an at-rule inside a rule and a breakpoint as a range. Safari
+before 17.2 and Chrome before 120 read no nesting; Safari before 16.4 reads no
+range. With `flat: true`:
+
+- an at-rule inside a rule moves outside it, after the declarations before
+  it, with the rule repeated inside. This is the `@supports` of a colour with
+  opacity or of a gradient, and the `@media` of `container` and
+  `outline-hidden`;
+- `@media (width >= 48rem)` is written `@media (min-width: 48rem)`,
+  `@media (width < 48rem)` is written `@media not all and (min-width: 48rem)`,
+  and `@media not (hover: hover)` is written `@media not all and (hover: hover)`.
+
+```css
+.text-brand\/80 {
+  color: color-mix(in srgb, #1d4ed8 80%, transparent);
+}
+@supports (color: color-mix(in lab, red, red)) {
+  .text-brand\/80 {
+    color: color-mix(in oklab, var(--color-brand) 80%, transparent);
+  }
+}
+@media not all and (min-width: 48rem) {
+  .max-md\:hidden {
+    display: none;
+  }
+}
+```
+
+A container query keeps its range: every browser with container queries
+reads it. An arbitrary variant's media query is rewritten when it is one
+condition written with spaces (`[@media(width_>=_600px)]:`), and written as
+given otherwise (`[@media(width>=600px)]:`). Flat output is not compared
+with Tailwind, which has no such build.
+
+### Tokens other CSS reads
+
+A token is written to `:root` only when a compiled class reads it. `reads`
+is the project's other CSS as text: a token it reads as `var(--name)` is
+written too, and so is a token that one reads. Nothing else of the text
+reaches the sheet.
+
+```crystal
+Tailwind.compile(classes, theme, reads: File.read("site.css"))
+```
+
+### Changing a class before it is printed
+
+`Tailwind.parse(theme, name)` answers a class as a `Tailwind::Candidate`, or
+nil. `compile` takes candidates in place of classes, with the same
+arguments, and sorts them as it sorts classes:
+
+```crystal
+candidates = classes.to_set.compact_map { |name| Tailwind.parse(theme, name) }
+candidates = candidates.map do |candidate|
+  next candidate unless candidate.name.starts_with?("md:")
+  nodes = candidate.rules.nodes.map do |node|
+    next node unless node.is_a?(Tailwind::Decl) && node.property == "font-size"
+    Tailwind::Decl.new("font-size", "clamp(1rem, 5vw, #{node.value})").as(Tailwind::Node)
+  end
+  candidate.copy_with(rules: candidate.rules.copy_with(nodes: nodes))
+end
+Tailwind.compile(candidates, theme)
+```
+
+A candidate's `rules.nodes` are `Tailwind::Decl` and `Tailwind::Block`
+(a nested rule or at-rule). A candidate given twice is printed twice.
 
 ## Theme
 
@@ -63,6 +134,20 @@ Tailwind.compile(classes, theme)
 - `@theme reference` tokens are never written: another sheet defines them,
   and a utility reads `var(--color-brand, #1d4ed8)`.
 - Anything else in the CSS raises `Tailwind::Error`, with the line.
+
+### Another base
+
+`Tailwind::Theme.load(css, base)` puts `css` on top of `base` instead of
+Tailwind's default theme, and leaves `base` as it was. `Tailwind::Theme.new`
+is a theme with no tokens, so a base of the caller's own is:
+
+```crystal
+BASE  = Tailwind::Theme.load(File.read("base.css"), Tailwind::Theme.new)
+theme = Tailwind::Theme.load(site_css, BASE)
+```
+
+The line of a `Tailwind::Error` is the line in `site_css`. The preflight
+reads a `--default-*` token only when the theme or its base declares it.
 
 ### Dark mode
 
@@ -145,7 +230,7 @@ The Crystal source, in `src/tailwind/`:
 | `value.cr` | decodes an arbitrary value and tells its type |
 | `variants.cr` | the variants that take a value or wrap another (`group-`, `not-`, `data-`, `min-`), and each one's sort order |
 | `fallback.cr` | writes a `color-mix()` declaration twice, for browsers without it |
-| `print.cr` | lifts at-rules outside rules, merges neighbours, prints |
+| `print.cr` | lifts at-rules outside rules, all of them when flat, merges neighbours, prints |
 | `theme.cr` | parses `@theme` over the default theme |
 
 `src/tailwind.cr` reads classes, sorts them as Tailwind does and writes the

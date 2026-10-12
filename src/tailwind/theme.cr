@@ -43,12 +43,24 @@ module Tailwind
     # Tailwind's default theme.
     class_getter default : Theme { new.tap(&.add(DEFAULT_CSS)) }
 
-    # The default theme with `css` on top of it.
-    def self.load(css : String) : Theme
-      new.tap do |theme|
-        theme.add(DEFAULT_CSS)
-        theme.add(css)
-      end
+    # `base` with `css` on top of it. `base` is Tailwind's default theme
+    # unless the caller gives its own, which `load` does not change;
+    # `Theme.new` is one with no tokens. An error's line is the line in `css`.
+    def self.load(css : String, base : Theme = default) : Theme
+      new(base).tap(&.add(css))
+    end
+
+    def initialize
+    end
+
+    protected def initialize(base : Theme)
+      @vars = base.vars.dup
+      @inline = base.inline.dup
+      @keyframes = base.keyframes.dup
+      @static = base.static.dup
+      @references = base.references.dup
+      @declared = base.declared.dup
+      @dark = base.dark
     end
 
     protected def add(css : String) : Nil
