@@ -27,8 +27,10 @@ module Tailwind
       written = heads.map(&.split('\n').join('\n') { |head| head.starts_with?('@') ? head : Print.selector(head) })
       {name, Variant.new(index, written, content: name == "before" || name == "after")}
     end.to_h
-    # An arbitrary variant sorts after every other.
-    ARBITRARY = LIST.size
+    # A theme's own variant sorts after Tailwind's, by name, as Tailwind adds
+    # it after its own; an arbitrary variant after every other.
+    CUSTOM    = LIST.size
+    ARBITRARY = LIST.size + 1
 
     # The roots that take a value, longest first: `nth-last-of-type-3`.
     ROOTS = LIST.compact_map { |name, heads| name if heads.empty? && !name.starts_with?('@') }.sort_by! { |name| -name.size }
@@ -49,8 +51,8 @@ module Tailwind
     # A variant as written before the `:`, or nil when it is not one.
     def self.resolve(theme : Theme, text : String, depth : Int32 = 1) : Variant?
       return nil if depth > DEPTH
-      if text == "dark" && (written = theme.dark)
-        return dark(written)
+      if written = theme.variants[text]?
+        return custom(written, text == "dark" ? ORDER["dark"] : CUSTOM, text)
       end
       if found = FIXED[text]?
         return found
@@ -71,12 +73,12 @@ module Tailwind
       nil
     end
 
-    # `dark:` as a theme's `@custom-variant dark` writes it: the selectors
-    # as one rule, then a rule for each at-rule. It keeps `dark:`'s order.
-    private def self.dark(written : String) : Variant
+    # A variant as a theme's `@custom-variant` writes it: the selectors as
+    # one rule, then a rule for each at-rule. `dark:` keeps its order.
+    private def self.custom(written : String, order : Int32, name : String) : Variant
       at_rules, selectors = Scan.split(written, ',').map(&.strip).partition(&.starts_with?('@'))
       heads = selectors.empty? ? at_rules : [Print.selector(selectors.join(", "))] + at_rules
-      Variant.new(ORDER["dark"], [heads.join('\n')])
+      Variant.new(order, [heads.join('\n')], Rank{ {0, name, 0.0} })
     end
 
     # `[&_svg]`, `[@media(min-width:1px)]`, `[.dark_&]`.

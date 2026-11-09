@@ -23,6 +23,8 @@ module Tailwind
   #
   # `@custom-variant dark (&:where(.dark, .dark *));` beside the blocks makes
   # `dark:` that selector instead of the `prefers-color-scheme` media query.
+  # Another name adds a variant: `@custom-variant native (&:where(html[data-native] *));`
+  # makes `native:hidden`.
   class Theme
     DEFAULT_CSS = {{ read_file("#{__DIR__}/vendor/theme.css") }}
 
@@ -41,9 +43,14 @@ module Tailwind
     getter references = Set(String).new
     # Tokens a theme names, with a value or without one.
     getter declared = Set(String).new
-    # What `dark:` wraps a rule in, when it is not the media query: the
-    # selectors and at-rules between the brackets of `@custom-variant dark`.
-    getter dark : String?
+    # Each `@custom-variant`'s selectors and at-rules, between its brackets,
+    # by name.
+    getter variants = {} of String => String
+
+    # What `dark:` wraps a rule in, when it is not the media query.
+    def dark : String?
+      variants["dark"]?
+    end
 
     # Tailwind's default theme.
     class_getter default : Theme { new.tap(&.add(DEFAULT_CSS)) }
@@ -65,12 +72,12 @@ module Tailwind
       @static = base.static.dup
       @references = base.references.dup
       @declared = base.declared.dup
-      @dark = base.dark
+      @variants = base.variants.dup
     end
 
     protected def add(css : String) : Nil
       Parser.new(css).statements(top: true).each do |node|
-        next @dark = node.value unless node.is_a?(Block)
+        next variants[node.property.lchop("variant ")] = node.value unless node.is_a?(Block)
         options = node.head.split
         # `@keyframes` at the top is read as one inside a block.
         (options[0] == "@keyframes" ? [node.as(Node)] : node.nodes).each do |child|
@@ -149,7 +156,7 @@ module Tailwind
     # CSS as nested declarations and blocks: enough for `@theme` and
     # `@keyframes`.
     private class Parser
-      DARK = /\A@custom-variant\s+dark\s*\(\s*(\S.*?)\s*\)\z/m
+      VARIANT = /\A@custom-variant\s+([a-z][a-z0-9-]*)\s*\(\s*(\S.*?)\s*\)\z/m
 
       def initialize(css : String)
         @chars = css.chars
@@ -158,7 +165,7 @@ module Tailwind
       end
 
       # At the top, only `@theme` and `@keyframes` blocks, and
-      # `@custom-variant dark (…);`, which is read as a declaration.
+      # `@custom-variant name (…);`, which is read as a declaration.
       def statements(top : Bool = false) : Array(Node)
         out = [] of Node
         loop do
@@ -166,13 +173,13 @@ module Tailwind
           break if eof? || char == '}'
           line = @line
           text = read_statement
-          if top && char != '{' && (dark = text.match(DARK))
+          if top && char != '{' && (custom = text.match(VARIANT))
             advance if char == ';'
-            out << Decl.new("dark", dark[1])
+            out << Decl.new("variant #{custom[1]}", custom[2])
             next
           end
           if top && !(char == '{' && text.matches?(/\A@(theme|keyframes)\b/))
-            raise Error.new(line, "expected @theme { … } or @custom-variant dark (…)")
+            raise Error.new(line, "expected @theme { … } or @custom-variant name (…)")
           end
           if char == '{'
             advance

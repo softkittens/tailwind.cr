@@ -168,8 +168,8 @@ end
 
 ## Theme
 
-`Tailwind::Theme.load(css)` reads `@theme` blocks, and one `@custom-variant
-dark`, on top of Tailwind's default theme:
+`Tailwind::Theme.load(css)` reads `@theme` blocks and `@custom-variant`
+lines on top of Tailwind's default theme:
 
 ```crystal
 theme = Tailwind::Theme.load(<<-CSS)
@@ -224,6 +224,18 @@ page instead, give the theme the line Tailwind takes:
 attribute works the same way: `(&:where([data-theme=dark], [data-theme=dark] *))`.
 Setting the class or attribute is the page's own script.
 
+### Variants of your own
+
+Any other name in that line adds a variant, after Tailwind's own:
+
+```css
+@custom-variant native (&:where(html[data-native] *));
+```
+
+`native:hidden` then applies inside `<html data-native>`. The body is
+selectors and at-rules between brackets, as for `dark`; Tailwind's block form
+with `@slot` is not read.
+
 ## What it builds
 
 - Every static utility and every functional root of Tailwind 4.3.3, with
@@ -241,7 +253,7 @@ Setting the class or attribute is the page's own script.
 
 ## What it does not build
 
-- `@utility`, `@custom-variant` for anything but `dark`, `@apply`, `@import`,
+- `@utility`, `@custom-variant` in its block form (`{ … @slot; }`), `@apply`, `@import`,
   plugins and prefixes. A project's own CSS is plain CSS beside the sheet,
   reading the theme's variables.
 - `theme()` in an arbitrary value, which is Tailwind 3's way to read a

@@ -197,8 +197,16 @@ describe Tailwind do
     Tailwind.compile(["dark:flex"], preflight: false).should contain("@media (prefers-color-scheme: dark) {")
   end
 
-  it "takes no other @custom-variant" do
-    expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant hocus (&:hover, &:focus);") }
+  it "adds a variant of a theme's @custom-variant with another name, after Tailwind's" do
+    theme = Tailwind::Theme.load("@custom-variant native (&:where(html[data-native] *));")
+    css = Tailwind.compile(["native:hidden", "md:flex", "native:md:block"], theme, preflight: false)
+    css.should contain(".native\\:hidden:where(html[data-native] *) {")
+    css.index!(".md\\:flex").should be < css.index!(".native\\:hidden")
+    css.should contain(".native\\:md\\:block:where(html[data-native] *) {")
+    Tailwind.compile(["native:hidden"], preflight: false).should_not contain("native")
+  end
+
+  it "takes no @custom-variant with an empty or block body" do
     expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant dark ();") }
     expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant dark { &:where(.dark *) { @slot; } }") }
   end
