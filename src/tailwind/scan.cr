@@ -41,6 +41,17 @@ module Tailwind
       true
     end
 
+    # Whether text is the inside of one pair of brackets: balanced, and with
+    # no `;`, `{` or `}` outside a string, at any depth. A variant's body is
+    # written as the head of a block, so one that has these ends it.
+    def self.flat?(text : String) : Bool
+      return false unless contained?(text)
+      each(text, curly: false) do |c, _, _|
+        return false if c == ';' || c == '{' || c == '}'
+      end
+      true
+    end
+
     # Each character that is not escaped or in a string, with where it is
     # and how many brackets are open around it.
     private def self.each(text : String, curly : Bool = true, & : Char, Int32, Int32 ->) : Nil

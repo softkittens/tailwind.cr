@@ -233,8 +233,21 @@ Any other name in that line adds a variant, after Tailwind's own:
 ```
 
 `native:hidden` then applies inside `<html data-native>`. The body is
-selectors and at-rules between brackets, as for `dark`; Tailwind's block form
-with `@slot` is not read.
+selectors and at-rules between brackets, as for `dark`, with no `;`, `{` or
+`}` outside a string (Tailwind's block form with `@slot` is not read). A
+later line for the same name replaces the earlier one.
+
+`layer(name)` after the body writes the variant's classes in that layer
+instead of `utilities`, and `@layer a, b;` orders layers after Tailwind's own,
+so a variant can win over a layer the sheet puts after the utilities:
+
+```css
+@layer native-utilities;
+@custom-variant native (&:where(html[data-native] *)) layer(native-utilities);
+```
+
+The sheet then opens with
+`@layer theme, base, components, utilities, native-utilities;`.
 
 ## What it builds
 

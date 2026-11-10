@@ -14,7 +14,7 @@ module Tailwind
   module Variants
     alias Rank = Array({Int32, String, Float64})
 
-    record Variant, order : Int32, heads : Array(String), rank : Rank = Rank.new, content : Bool = false
+    record Variant, order : Int32, heads : Array(String), rank : Rank = Rank.new, content : Bool = false, layer : String? = nil
 
     # Tailwind's variants in its order, as script/vendor.cr writes them:
     # [name, heads]. One with no heads takes a value, and is built in
@@ -52,7 +52,7 @@ module Tailwind
     def self.resolve(theme : Theme, text : String, depth : Int32 = 1) : Variant?
       return nil if depth > DEPTH
       if written = theme.variants[text]?
-        return custom(written, text == "dark" ? ORDER["dark"] : CUSTOM, text)
+        return custom(written, text == "dark" ? ORDER["dark"] : CUSTOM, text, theme.variant_layers[text]?)
       end
       if found = FIXED[text]?
         return found
@@ -75,10 +75,10 @@ module Tailwind
 
     # A variant as a theme's `@custom-variant` writes it: the selectors as
     # one rule, then a rule for each at-rule. `dark:` keeps its order.
-    private def self.custom(written : String, order : Int32, name : String) : Variant
+    private def self.custom(written : String, order : Int32, name : String, layer : String?) : Variant
       at_rules, selectors = Scan.split(written, ',').map(&.strip).partition(&.starts_with?('@'))
       heads = selectors.empty? ? at_rules : [Print.selector(selectors.join(", "))] + at_rules
-      Variant.new(order, [heads.join('\n')], Rank{ {0, name, 0.0} })
+      Variant.new(order, [heads.join('\n')], Rank{ {0, name, 0.0} }, layer: layer)
     end
 
     # `[&_svg]`, `[@media(min-width:1px)]`, `[.dark_&]`.

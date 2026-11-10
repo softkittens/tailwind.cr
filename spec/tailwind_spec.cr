@@ -206,6 +206,41 @@ describe Tailwind do
     Tailwind.compile(["native:hidden"], preflight: false).should_not contain("native")
   end
 
+  it "writes a variant's classes in the layer its @custom-variant names, ordered after the theme's @layer" do
+    theme = Tailwind::Theme.load("@layer native, native-utilities;\n@custom-variant native (&:where(html[data-native] *)) layer(native-utilities);")
+    css = Tailwind.compile(["flex", "native:hidden", "native:md:block"], theme, preflight: false)
+    css.should contain("@layer theme, base, components, utilities, native, native-utilities;\n")
+    layered = css.index!("@layer native-utilities {")
+    css.index!(".flex {").should be < css.index!("}\n@layer native-utilities {")
+    css.index!(".native\\:hidden:where(html[data-native] *) {").should be > layered
+    css.index!(".native\\:md\\:block").should be > layered
+  end
+
+  it "takes a later @custom-variant of a name as the whole definition, its layer too" do
+    theme = Tailwind::Theme.load("@custom-variant dark (&:where(.a *)) layer(x);\n@custom-variant dark (&:where(.b *));")
+    css = Tailwind.compile(["dark:flex"], theme, preflight: false)
+    css.should contain(".dark\\:flex:where(.b *) {")
+    css.should_not contain("@layer x")
+  end
+
+  it "takes no @custom-variant body that ends its block, or a layer( it cannot read" do
+    expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant evil (@media all; } html { background: red } @media all);") }
+    expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant evil (@media all { & });") }
+    expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant x (&:hover) layer(App);") }
+    Tailwind::Theme.load(%(@custom-variant x (&[data-a=";"]);))["--spacing"]?.should_not be_nil
+  end
+
+  it "names a layer once in the ordering, Tailwind's own too" do
+    css = Tailwind.compile(["flex"], Tailwind::Theme.load("@layer theme, app, utilities, app;"), preflight: false)
+    css.should contain("@layer theme, base, components, utilities, app;\n")
+  end
+
+  it "orders the layers a theme names without a variant using them" do
+    css = Tailwind.compile(["flex"], Tailwind::Theme.load("@layer app;"), preflight: false)
+    css.should contain("@layer theme, base, components, utilities, app;\n")
+    css.should_not contain("@layer app {")
+  end
+
   it "takes no @custom-variant with an empty or block body" do
     expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant dark ();") }
     expect_raises(Tailwind::Error) { Tailwind::Theme.load("@custom-variant dark { &:where(.dark *) { @slot; } }") }

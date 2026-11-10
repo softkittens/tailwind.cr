@@ -173,14 +173,19 @@ module Tailwind
   end
 
   private def self.emit(theme : Theme, candidates : Array(Candidate), preflight : Bool, flat : Bool, reads : String) : String
-    sheet = [] of Block
+    # The utilities layer's rules, then each layer a theme's variant names
+    # (`@custom-variant … layer(name)`), in the order first used.
+    sheets = {"utilities" => [] of Block}
     candidates.each do |candidate|
       # After sorting: Tailwind orders a class by the rule as first written.
       nodes = Variants.wrap(Fallback.rules(theme, candidate.rules).nodes, candidate.variants)
       nodes = Print.important(nodes) if candidate.important
+      sheet = sheets[candidate.variants.compact_map(&.layer).last? || "utilities"] ||= [] of Block
       Print.flatten(".#{escape(candidate.name)}", nodes, flat).each { |item| Print.append(sheet, item) }
     end
-    utilities = String.build { |io| sheet.each { |item| Print.block(io, item, 2) } }
+    written = sheets.transform_values { |sheet| String.build { |io| sheet.each { |item| Print.block(io, item, 2) } } }
+    utilities = written["utilities"]
+    others = written.reject("utilities")
     base = preflight ? preflight_css(theme) : ""
 
     properties = candidates.flat_map(&.rules.properties).uniq!(&.name)
@@ -188,8 +193,10 @@ module Tailwind
     String.build do |io|
       io << HEADER
       io << "@layer properties;\n" unless properties.empty?
-      io << "@layer theme, base, components, utilities;\n"
-      vars = used_vars(theme, utilities + base + reads)
+      io << "@layer theme, base, components, utilities"
+      (theme.layers.to_a + others.keys - %w(theme base components utilities)).uniq.each { |name| io << ", " << name }
+      io << ";\n"
+      vars = used_vars(theme, written.values.join + base + reads)
       unless vars.empty?
         io << "@layer theme {\n  :root, :host {\n"
         vars.each { |name, value| io << "    " << name << ": " << value << ";\n" }
@@ -201,6 +208,7 @@ module Tailwind
       else
         io << "@layer utilities {\n" << utilities << "}\n"
       end
+      others.each { |name, rules| io << "@layer " << name << " {\n" << rules << "}\n" }
       properties.each { |property| Print.property(io, property) }
       keyframes(theme, vars).each { |block| Print.block(io, block, 0) }
       unless properties.empty?

@@ -24,7 +24,12 @@ module Tailwind
   # `@custom-variant dark (&:where(.dark, .dark *));` beside the blocks makes
   # `dark:` that selector instead of the `prefers-color-scheme` media query.
   # Another name adds a variant: `@custom-variant native (&:where(html[data-native] *));`
-  # makes `native:hidden`.
+  # makes `native:hidden`. With `layer(name)` after it, a class with the
+  # variant is written in that layer rather than `utilities`, so it can win
+  # over a layer the sheet orders after the utilities.
+  #
+  # `@layer a, b;` beside the blocks orders those layers after Tailwind's
+  # own: the sheet opens with `@layer theme, base, components, utilities, a, b;`.
   class Theme
     DEFAULT_CSS = {{ read_file("#{__DIR__}/vendor/theme.css") }}
 
@@ -46,6 +51,11 @@ module Tailwind
     # Each `@custom-variant`'s selectors and at-rules, between its brackets,
     # by name.
     getter variants = {} of String => String
+    # The layer a `@custom-variant … layer(name)` writes its classes in, by
+    # the variant's name.
+    getter variant_layers = {} of String => String
+    # The layers `@layer a, b;` orders after Tailwind's.
+    getter layers = Set(String).new
 
     # What `dark:` wraps a rule in, when it is not the media query.
     def dark : String?
@@ -73,11 +83,25 @@ module Tailwind
       @references = base.references.dup
       @declared = base.declared.dup
       @variants = base.variants.dup
+      @variant_layers = base.variant_layers.dup
+      @layers = base.layers.dup
     end
 
     protected def add(css : String) : Nil
       Parser.new(css).statements(top: true).each do |node|
-        next variants[node.property.lchop("variant ")] = node.value unless node.is_a?(Block)
+        if node.is_a?(Decl)
+          case node.property
+          when "layers"
+            node.value.split(',').each { |name| layers << name.strip }
+          when .starts_with?("layer ")
+            variant_layers[node.property.lchop("layer ")] = node.value
+          else
+            name = node.property.lchop("variant ")
+            variants[name] = node.value
+            variant_layers.delete(name)
+          end
+          next
+        end
         options = node.head.split
         # `@keyframes` at the top is read as one inside a block.
         (options[0] == "@keyframes" ? [node.as(Node)] : node.nodes).each do |child|
@@ -156,7 +180,8 @@ module Tailwind
     # CSS as nested declarations and blocks: enough for `@theme` and
     # `@keyframes`.
     private class Parser
-      VARIANT = /\A@custom-variant\s+([a-z][a-z0-9-]*)\s*\(\s*(\S.*?)\s*\)\z/m
+      VARIANT = /\A@custom-variant\s+([a-z][a-z0-9-]*)\s*\(\s*(\S.*?)\s*\)(?:\s+layer\(\s*([a-z][a-z0-9-]*)\s*\))?\z/m
+      LAYERS  = /\A@layer\s+([a-z][a-z0-9-]*(?:\s*,\s*[a-z][a-z0-9-]*)*)\z/
 
       def initialize(css : String)
         @chars = css.chars
@@ -165,7 +190,8 @@ module Tailwind
       end
 
       # At the top, only `@theme` and `@keyframes` blocks, and
-      # `@custom-variant name (…);`, which is read as a declaration.
+      # `@custom-variant name (…);` and `@layer a, b;`, which are read as
+      # declarations.
       def statements(top : Bool = false) : Array(Node)
         out = [] of Node
         loop do
@@ -174,12 +200,19 @@ module Tailwind
           line = @line
           text = read_statement
           if top && char != '{' && (custom = text.match(VARIANT))
+            raise Error.new(line, "@custom-variant #{custom[1]} (…) takes selectors and at-rules between its brackets, and layer(name) after them") unless Scan.flat?(custom[2])
             advance if char == ';'
             out << Decl.new("variant #{custom[1]}", custom[2])
+            out << Decl.new("layer #{custom[1]}", custom[3]) if custom[3]?
+            next
+          end
+          if top && char != '{' && (order = text.match(LAYERS))
+            advance if char == ';'
+            out << Decl.new("layers", order[1])
             next
           end
           if top && !(char == '{' && text.matches?(/\A@(theme|keyframes)\b/))
-            raise Error.new(line, "expected @theme { … } or @custom-variant name (…)")
+            raise Error.new(line, "expected @theme { … }, @custom-variant name (…) or @layer name, …")
           end
           if char == '{'
             advance
